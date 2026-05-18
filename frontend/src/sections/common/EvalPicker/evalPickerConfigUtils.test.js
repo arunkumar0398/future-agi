@@ -250,6 +250,7 @@ describe("buildCompositeSourceModeProps", () => {
       isComposite: true,
       compositeAdhocConfig: {
         child_template_ids: ["child-a", "child-b"],
+        child_configs: {},
         aggregation_enabled: false,
         aggregation_function: "min",
         composite_child_axis: "percentage",

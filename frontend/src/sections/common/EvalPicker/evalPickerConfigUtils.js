@@ -1,3 +1,5 @@
+import { buildCompositeChildConfigs } from "src/sections/evals/Helpers/compositeRuntimeConfig";
+
 const OUTPUT_TYPE_CONFIG_MAP = {
   pass_fail: "Pass/Fail",
   percentage: "score",
@@ -107,6 +109,7 @@ export const buildCompositeSourceModeProps = ({
     isComposite: true,
     compositeAdhocConfig: {
       child_template_ids: children.map((child) => child.child_id),
+      child_configs: buildCompositeChildConfigs(children),
       aggregation_enabled:
         compositeDetail?.aggregation_enabled ?? fullEval?.aggregation_enabled ?? true,
       aggregation_function:

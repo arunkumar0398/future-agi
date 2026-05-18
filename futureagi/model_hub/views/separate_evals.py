@@ -2903,14 +2903,17 @@ class CompositeEvalCreateView(APIView):
             child_items = []
             child_map = {str(c.id): c for c in children}
             weights = req.child_weights or {}
+            child_configs = req.child_configs or {}
             for i, child_id in enumerate(req.child_template_ids):
                 child = child_map[child_id]
                 weight = weights.get(child_id, 1.0)
+                child_config = child_configs.get(child_id) or {}
                 CompositeEvalChild.objects.create(
                     parent=parent,
                     child=child,
                     order=i,
                     weight=weight,
+                    config=child_config,
                 )
                 child_items.append(
                     CompositeChildItem(
@@ -2919,6 +2922,7 @@ class CompositeEvalCreateView(APIView):
                         order=i,
                         eval_type=derive_eval_type(child),
                         weight=weight,
+                        config=child_config,
                     )
                 )
 
@@ -3007,6 +3011,7 @@ class CompositeEvalDetailView(APIView):
                             else None
                         ),
                         weight=link.weight,
+                        config=link.config or {},
                         required_keys=child_required,
                     )
                 )
@@ -3207,6 +3212,7 @@ class CompositeEvalDetailView(APIView):
 
                 child_map = {str(c.id): c for c in child_qs}
                 weights = req.child_weights or {}
+                child_configs = req.child_configs or {}
                 for i, child_id in enumerate(req.child_template_ids):
                     child = child_map[child_id]
                     CompositeEvalChild.objects.create(
@@ -3214,6 +3220,7 @@ class CompositeEvalDetailView(APIView):
                         child=child,
                         order=i,
                         weight=weights.get(child_id, 1.0),
+                        config=child_configs.get(child_id) or {},
                     )
             elif req.child_weights is not None:
                 existing_links = CompositeEvalChild.objects.filter(
@@ -3224,6 +3231,16 @@ class CompositeEvalDetailView(APIView):
                     if cid in req.child_weights:
                         link.weight = req.child_weights[cid]
                         link.save(update_fields=["weight"])
+
+            if req.child_template_ids is None and req.child_configs is not None:
+                existing_links = CompositeEvalChild.objects.filter(
+                    parent=parent, deleted=False
+                )
+                for link in existing_links:
+                    cid = str(link.child_id)
+                    if cid in req.child_configs:
+                        link.config = req.child_configs[cid] or {}
+                        link.save(update_fields=["config"])
 
             parent.save()
 
@@ -3247,6 +3264,7 @@ class CompositeEvalDetailView(APIView):
                         "child_name": link.child.name,
                         "order": link.order,
                         "weight": link.weight,
+                        "config": link.config or {},
                         "pinned_version_id": (
                             str(link.pinned_version_id)
                             if link.pinned_version_id
@@ -3281,6 +3299,8 @@ class CompositeEvalDetailView(APIView):
                         else None
                     ),
                     weight=link.weight,
+                    config=link.config or {},
+                    required_keys=list((link.child.config or {}).get("required_keys") or []),
                 )
                 for link in links
             ]
@@ -3600,16 +3620,18 @@ class CompositeEvalAdhocExecuteView(APIView):
             )
 
             weights = req.child_weights or {}
+            child_configs = req.child_configs or {}
             child_links: list[CompositeEvalChild] = []
             for i, child_id in enumerate(req.child_template_ids):
                 child = children_by_id[child_id]
                 # Unsaved link object — execute_composite_children_sync only
-                # reads .child, .child_id, .order, .weight, .pinned_version.
+                # reads .child, .child_id, .order, .weight, .pinned_version, .config.
                 link = CompositeEvalChild(
                     parent=parent,
                     child=child,
                     order=i,
                     weight=float(weights.get(child_id, 1.0)),
+                    config=child_configs.get(child_id) or {},
                 )
                 child_links.append(link)
 

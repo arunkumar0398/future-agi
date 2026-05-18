@@ -49,6 +49,7 @@ import CodeEvalEditor from "./CodeEvalEditor";
 import ResizablePanels from "src/components/resizablePanels/ResizablePanels";
 import TestPlayground from "./TestPlayground";
 import CompositeDetailPanel from "./CompositeDetailPanel";
+import { buildCompositeChildConfigs } from "../Helpers/compositeRuntimeConfig";
 import EvalFeedbackTab from "./EvalFeedbackTab";
 import EvalGroundTruthTab from "./EvalGroundTruthTab";
 import EvalUsageTab from "./EvalUsageTab";
@@ -820,6 +821,7 @@ const EvalDetailPage = () => {
         aggregation_function: compositeAggFunction,
         composite_child_axis: compositeChildAxis || undefined,
         child_template_ids: compositeChildren.map((c) => c.child_id),
+        child_configs: buildCompositeChildConfigs(compositeChildren),
         child_weights: Object.keys(weights).length > 0 ? weights : null,
       };
       const result = await updateComposite.mutateAsync(payload);
@@ -913,6 +915,7 @@ const EvalDetailPage = () => {
           aggregation_function: compositeAggFunction,
           composite_child_axis: compositeChildAxis || undefined,
           child_template_ids: compositeChildren.map((c) => c.child_id),
+          child_configs: buildCompositeChildConfigs(compositeChildren),
           child_weights: Object.keys(weights).length > 0 ? weights : null,
         });
       }
