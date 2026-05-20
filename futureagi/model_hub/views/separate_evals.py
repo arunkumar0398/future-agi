@@ -1800,9 +1800,7 @@ class EvalTemplateCreateV2View(APIView):
                     "language": req.code_language or "python",
                     "required_keys": [],
                     "custom_eval": True,
-                    # Defensively include LLM-only keys so a cross-type
-                    # restore or eval-type switch on the FE doesn't read
-                    # stale state from a prior version's snapshot.
+                    # Keep cross-type restore from leaking stale FE state.
                     "few_shot_examples": [],
                 }
                 criteria = req.code or ""
@@ -1841,15 +1839,10 @@ class EvalTemplateCreateV2View(APIView):
                     "data_injection": _merged_data_injection,
                     "summary": req.summary or {"type": "concise"},
                     "instructions": req.instructions,
-                    # Defensively include LLM-only keys so a cross-type
-                    # restore or eval-type switch on the FE doesn't read
-                    # stale state from a prior version's snapshot.
+                    # Keep cross-type restore from leaking stale FE state.
                     "few_shot_examples": [],
                 }
-                # Always echo choices into config so the FE (which reads from
-                # config_snapshot on the version row) can render labels for
-                # pass_fail evals — previously only deterministic evals with
-                # an explicit choices_map ended up with ``choices`` in config.
+                # FE form-load reads labels from config_snapshot.
                 if choices_list:
                     config["choices"] = choices_list
                 if choices_map:
@@ -1878,15 +1871,8 @@ class EvalTemplateCreateV2View(APIView):
                 # Store full message chain if provided
                 if req.messages and len(req.messages) > 1:
                     config["messages"] = req.messages
-                # Store few-shot examples. Always include the key (default
-                # `[]`) so config_snapshot is complete: the FE's version-load
-                # uses a conditional setter (`if (config.few_shot_examples)
-                # setFewShotExamples(...)`) that silently keeps the previous
-                # version's state when the key is missing — leaking examples
-                # from one version onto another.
+                # Always set the key — missing key leaks prior version's FE state.
                 config["few_shot_examples"] = req.few_shot_examples or []
-                # Always echo choices into config so the FE can render labels
-                # for pass_fail evals — see agent branch comment above.
                 if choices_list:
                     config["choices"] = choices_list
                 if choices_map:
@@ -1897,12 +1883,7 @@ class EvalTemplateCreateV2View(APIView):
             # Store template_format in config
             config["template_format"] = template_format
 
-            # Echo scoring + error-localizer fields into config so the FE
-            # (which reads version data from config_snapshot when loading a
-            # specific version) sees the same values as the live template.
-            # These also live as first-class columns on the version row, but
-            # the FE form-load code reads from `config.*`, so the duplicate
-            # storage is what keeps the version detail view consistent.
+            # Mirror into config — FE form-load reads from config_snapshot.
             config["pass_threshold"] = req.pass_threshold
             config["choice_scores"] = req.choice_scores
             config["error_localizer_enabled"] = bool(req.error_localizer_enabled)
@@ -1932,9 +1913,7 @@ class EvalTemplateCreateV2View(APIView):
                 error_localizer_enabled=req.error_localizer_enabled,
             )
 
-            # 8. Create initial version (V1) — only when this is a direct
-            # (non-draft) create. For drafts, V1 is deferred until the user
-            # clicks Save (i.e. /update/ with publish=true). See TH-4855.
+            # Drafts defer V1 until first publish.
             if not is_draft:
                 from model_hub.models.evals_metric import EvalTemplateVersion
 
@@ -2011,9 +1990,7 @@ class EvalTemplateDetailView(APIView):
                 eval_template=template
             ).count()
             default_version = EvalTemplateVersion.objects.get_default(template)
-            # Drafts have no version row yet (V1 is created on first publish,
-            # see TH-4855). Fall back to 1 so the FE shows "V1" as a placeholder
-            # while the user is still editing the draft.
+            # Drafts have no version row; show "V1" placeholder.
             current_version_num = (
                 default_version.version_number if default_version else 1
             )
@@ -2255,16 +2232,11 @@ class EvalTemplateUpdateView(APIView):
                 if template.config is None:
                     template.config = {}
                 template.config["output"] = output_map.get(req.output_type, "Pass/Fail")
-                # Only pass_fail forces the "Passed/Failed" label set. For
-                # percentage ("score") and deterministic, the user manages
-                # their own labels via the choice_scores branch below — we
-                # MUST NOT clear them here, or a /update/ payload that
-                # re-sends output_type but not choice_scores (which the FE
-                # does on save) will strip the user's labels out of config.
+                # Only pass_fail owns choices here; other types manage their
+                # own labels via choice_scores below.
                 if req.output_type == "pass_fail":
                     template.config["choices"] = ["Passed", "Failed"]
                     template.choices = ["Passed", "Failed"]
-                    # choices_map / multi_choice belong to deterministic only.
                     template.config.pop("choices_map", None)
                     template.config.pop("multi_choice", None)
 
@@ -2293,16 +2265,8 @@ class EvalTemplateUpdateView(APIView):
                     }
                     template.config["choice_scores"] = req.choice_scores
                 else:
-                    # Clear scores ONLY — do NOT wipe choices/labels.
-                    # The FE sends `choice_scores: null` on every /update/
-                    # for pass_fail evals (no user-defined scores), so
-                    # treating null as "remove all choices" wiped the
-                    # `["Passed", "Failed"]` set at create-v2 time and
-                    # left V1 with no choices at all. The output_type
-                    # branch owns `choices` for pass_fail; the user owns
-                    # them for percentage / deterministic. Leave both
-                    # template.choices (column) and config["choices"]
-                    # untouched here.
+                    # Clear scores only; choices are owned elsewhere.
+                    # FE sends choice_scores=null on every pass_fail keystroke.
                     template.choice_scores = None
                     if template.config:
                         template.config.pop("choices_map", None)
@@ -2410,13 +2374,7 @@ class EvalTemplateUpdateView(APIView):
 
             template.save()
 
-            # TH-4855: V1 is created lazily on first publish. /create-v2/
-            # with is_draft=true does NOT seed a version; the live template
-            # row holds the in-progress draft state. Keystroke /update/
-            # calls only mutate the live row. When the user clicks Save
-            # (publish=true) and no version exists yet, we snapshot the
-            # current live state as V1. Subsequent versions (V2+) are
-            # created only via the explicit /versions/create/ endpoint.
+            # Lazy V1 on first publish (idempotent).
             if req.publish:
                 from model_hub.models.evals_metric import EvalTemplateVersion
 
@@ -2512,21 +2470,14 @@ class EvalTemplateVersionListView(APIView):
                         config_snapshot=cs,
                         created_by_name=created_by_name,
                         created_at=v.created_at.isoformat() if v.created_at else "",
-                        # Column-level snapshot fields. The FE renders these
-                        # directly instead of pulling from config_snapshot, so
-                        # they stay visible even when they aren't echoed into
-                        # the config dict (e.g. agent + pass_fail evals never
-                        # store ``choices`` inside config).
+                        # Column-level fields the FE reads directly.
                         prompt_messages=v.prompt_messages or [],
                         output_type_normalized=v.output_type_normalized,
                         pass_threshold=v.pass_threshold,
                         choice_scores=v.choice_scores,
                         error_localizer_enabled=bool(v.error_localizer_enabled),
                         eval_tags=list(v.eval_tags or []),
-                        # Derived from config_snapshot — also accept the
-                        # camelCase variants the FE sometimes round-trips
-                        # through /versions/create/ so a version saved with
-                        # only `choicesMap` still surfaces correctly.
+                        # Derived; tolerate camelCase from older FE round-trips.
                         choices=cs.get("choices") or [],
                         choices_map=cs.get("choices_map")
                         or cs.get("choicesMap")
@@ -2585,17 +2536,7 @@ class EvalTemplateVersionCreateView(APIView):
             except EvalTemplate.DoesNotExist:
                 return self._gm.not_found("Eval template not found or not editable.")
 
-            # Use the live template config as the authoritative source.
-            # By contract, the FE calls /update/ with the latest form state
-            # immediately before /update/?save-as-new-version → here, so
-            # template.config already has everything. The FE *also* hand-
-            # builds a `config_snapshot` and sends it on this request, but
-            # that snapshot is incomplete (it doesn't echo `choices`,
-            # `choices_map`, `eval_type_id`, etc.) and can carry stale
-            # camelCase variants from FE state, leading to V2/V3 rows that
-            # lose fields V1 has. Always take the live template.config so
-            # the version row is a faithful snapshot of what /update/ just
-            # persisted.
+            # Use live template.config; FE-supplied snapshot is incomplete.
             effective_config = template.config or {}
             version = EvalTemplateVersion.objects.create_version(
                 eval_template=template,
@@ -2675,13 +2616,8 @@ def _apply_version_snapshot_to_template(template, version):
         template.model = version.model
         fields_to_update.append("model")
 
-    # The template's `eval_type` column and `config["eval_type_id"]` are
-    # written together at create/update. If a user changes eval_type after
-    # publishing and then restores an older version, the config snapshot
-    # carries the old eval_type_id but the column would otherwise stay at
-    # the post-change value — leaving the runtime (which reads config) and
-    # the detail view (which reads the column) disagreeing. Reverse-map the
-    # restored eval_type_id back onto the column to keep them aligned.
+    # Realign eval_type column with restored config so detail view (column)
+    # and runtime (config) don't disagree across cross-type restores.
     _EVAL_TYPE_ID_TO_COL = {
         "AgentEvaluator": "agent",
         "CustomPromptEvaluator": "llm",
@@ -2803,12 +2739,7 @@ class RestoreVersionView(APIView):
             except EvalTemplateVersion.DoesNotExist:
                 return self._gm.not_found("Version not found.")
 
-            # Create a new version that mirrors the source, align live
-            # template, and promote the new mirror to default — all atomic.
-            # Promoting the mirror is what makes "Restore" a true activation:
-            # without it, the live row reflects the restored content but the
-            # is_default flag stays on whichever version was previously
-            # default, leaving runtime resolution inconsistent.
+            # Mirror source, align live row, promote mirror to default — atomic.
             with transaction.atomic():
                 new_version = EvalTemplateVersion.objects.create_version(
                     eval_template=template,

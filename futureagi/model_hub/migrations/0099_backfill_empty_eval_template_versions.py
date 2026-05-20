@@ -1,40 +1,9 @@
-"""Backfill EvalTemplateVersion rows whose prompt is empty across every column.
+"""Backfill EvalTemplateVersion rows that were seeded empty.
 
-Pre-fix /create-v2/ and /versions/create/ code paths seeded
-EvalTemplateVersion rows at form-mount time with empty defaults, before
-the user had typed any prompt content. Keystroke /update/ calls then
-mutated the live template row only — the version snapshot was never
-re-synced. The result: every V1 (and old V2+ from /versions/create/)
-that pre-dates the fix has its prompt fields empty, even though the
-live template row holds the real content the user actually typed.
-
-The view-layer fix in the same change-set closes this for new versions
-(V1 is created lazily on first publish, with content copied from the
-live row at that moment). This migration recovers the existing broken
-rows by copying the prompt-bearing fields from the live EvalTemplate
-into each empty version.
-
-Eval-type aware:
-    AgentEvaluator         -> criteria + config.rule_prompt + config.instructions
-    CustomPromptEvaluator  -> criteria + config.rule_prompt
-                              + (optional) prompt_messages / config.messages
-    CustomCodeEval         -> criteria (== code) + config.code + config.language
-    Composite              -> skipped (no prompt of its own)
-
-Guarantees:
-    - User-owned templates only. System evals are unconditionally excluded;
-      their canonical source is the YAML tree applied by seed_system_evals.
-    - Non-deleted templates only.
-    - Strictly additive: only fills empty fields. Never overwrites or
-      deletes existing content. Templates whose live row is also empty
-      are left untouched (they have no recoverable source).
-    - Idempotent: re-runs match no candidates because filled rows are
-      excluded by the emptiness check.
-
-Reverse is a no-op. The live template state we copy from at apply time
-may have moved on by the time of a reverse; restoring the empty state
-would re-introduce the very bug this migration fixes. Roll back via
-database point-in-time restore if absolutely needed.
+Copies prompt-bearing fields from the live EvalTemplate into each
+empty version row. User-owned, non-deleted, non-composite templates
+only. Strictly additive (never overwrites filled rows) and idempotent.
+Reverse is a no-op — rollback via DB point-in-time restore if needed.
 """
 
 from django.db import migrations
