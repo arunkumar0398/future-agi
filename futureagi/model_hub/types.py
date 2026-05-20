@@ -263,7 +263,25 @@ class EvalVersionItem(BaseModel):
     model: str = ""
     config_snapshot: dict = Field(default_factory=dict)
     created_by_name: str = ""
+    created_by_email: str = ""
     created_at: str = ""
+    # Column-level snapshot fields. These live on the version row (not in
+    # config_snapshot) so the FE can render them without having to parse
+    # config_snapshot. Mirrors the columns in _VERSION_SNAPSHOT_FIELDS
+    # plus prompt_messages.
+    prompt_messages: list = Field(default_factory=list)
+    output_type_normalized: str | None = None
+    pass_threshold: float | None = None
+    choice_scores: dict | None = None
+    error_localizer_enabled: bool = False
+    eval_tags: list = Field(default_factory=list)
+    # Lifted out of config_snapshot so the FE can render the per-version
+    # labels for pass_fail / deterministic / score evals without parsing
+    # the config blob. These are derived (read out of config_snapshot at
+    # response build time) so existing V1/V2 rows continue to work.
+    choices: list = Field(default_factory=list)
+    choices_map: dict = Field(default_factory=dict)
+    multi_choice: bool = False
 
 
 class EvalVersionListResponse(BaseModel):
