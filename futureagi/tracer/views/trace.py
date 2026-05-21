@@ -824,6 +824,7 @@ class TraceView(BaseModelViewSetMixin, ModelViewSet):
             FROM tracer_eval_logger FINAL
             WHERE trace_id = %(trace_id)s
               AND _peerdb_is_deleted = 0
+              AND (deleted = 0 OR deleted IS NULL)
             """
             eval_result = analytics.execute_ch_query(
                 eval_query, {"trace_id": str(trace_id)}, timeout_ms=30000
@@ -4083,6 +4084,7 @@ class TraceView(BaseModelViewSetMixin, ModelViewSet):
                 any(output_str_list) AS output_str_list
             FROM tracer_eval_logger FINAL
             WHERE _peerdb_is_deleted = 0
+              AND (deleted = 0 OR deleted IS NULL)
               AND trace_id = %(trace_id)s
               AND custom_eval_config_id IN %(eval_config_ids)s
             GROUP BY trace_id, custom_eval_config_id
@@ -4937,6 +4939,7 @@ class TraceView(BaseModelViewSetMixin, ModelViewSet):
                 "SELECT DISTINCT toString(custom_eval_config_id) AS cid "
                 "FROM tracer_eval_logger FINAL "
                 "WHERE _peerdb_is_deleted = 0 "
+                "AND (deleted = 0 OR deleted IS NULL) "
                 "AND dictGet('trace_dict', 'project_id', "
                 "trace_id) = toUUID(%(pid)s)",
                 {"pid": str(project_id)},
@@ -5209,6 +5212,7 @@ class TraceView(BaseModelViewSetMixin, ModelViewSet):
             "SELECT DISTINCT toString(custom_eval_config_id) AS cid "
             "FROM tracer_eval_logger FINAL "
             "WHERE _peerdb_is_deleted = 0 "
+            "AND (deleted = 0 OR deleted IS NULL) "
             "AND dictGet('trace_dict', 'project_id', "
             "trace_id) = toUUID(%(pid)s)",
             {"pid": str(project_id)},
@@ -5504,6 +5508,7 @@ class TraceView(BaseModelViewSetMixin, ModelViewSet):
             "SELECT DISTINCT toString(custom_eval_config_id) AS cid "
             "FROM tracer_eval_logger FINAL "
             "WHERE _peerdb_is_deleted = 0 "
+            "AND (deleted = 0 OR deleted IS NULL) "
             "AND dictGet('trace_dict', 'project_id', "
             "trace_id) = toUUID(%(pid)s)",
             {"pid": project_id},
