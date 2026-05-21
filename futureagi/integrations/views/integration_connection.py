@@ -220,50 +220,24 @@ class IntegrationConnectionViewSet(BaseModelViewSetMixinWithUserOrg, ModelViewSe
                 getattr(request, "organization", None) or request.user.organization
             )
 
-            # 5. Action-only platforms (Linear, etc.) use org-wide credentials
-            # with no per-project mapping, so the partial unique constraint
+            # Action-only platforms (Linear, etc.) use org-wide credentials
+            # with no per-project mapping. The partial unique constraint
             # restricts them to one live row per (org, workspace, platform).
-            # Treat a re-add as a credential rotation: update the existing
-            # live row in place instead of letting IntegrityError fire.
             if data["platform"] in ACTION_ONLY_PLATFORMS:
-                existing = (
-                    IntegrationConnection.objects.filter(
+                try:
+                    IntegrationConnection.objects.get(
                         organization=organization,
                         workspace=workspace,
                         platform=data["platform"],
-                        deleted=False,
                     )
-                    .order_by("-created_at")
-                    .first()
-                )
-                if existing is not None:
-                    existing.encrypted_credentials = encrypted
-                    existing.display_name = (
-                        data.get("display_name") or ext_project_name
+                    return self._gm.bad_request(
+                        f"{data['platform'].title()} is already connected for this workspace. "
+                        "Edit the existing connection in Settings > Integrations to rotate keys."
                     )
-                    existing.status = ConnectionStatus.ACTIVE
-                    existing.status_message = ""
-                    existing.save(
-                        update_fields=[
-                            "encrypted_credentials",
-                            "display_name",
-                            "status",
-                            "status_message",
-                            "updated_at",
-                        ]
-                    )
-                    logger.info(
-                        "action_only_credentials_rotated",
-                        connection_id=str(existing.id),
-                        platform=existing.platform,
-                        organization_id=str(organization.id),
-                        workspace_id=str(workspace.id),
-                        rotated_by=str(request.user.id),
-                    )
-                    result = IntegrationConnectionDetailSerializer(existing).data
-                    return self._gm.success_response(result)
+                except IntegrationConnection.DoesNotExist:
+                    pass
 
-            # 5b. Create connection (fresh, or any non-action-only platform)
+            # 5. Create connection
             connection = IntegrationConnection.objects.create(
                 organization=organization,
                 workspace=workspace,
@@ -307,7 +281,7 @@ class IntegrationConnectionViewSet(BaseModelViewSetMixinWithUserOrg, ModelViewSe
                     "Edit the existing connection in Settings > Integrations to rotate keys."
                 )
             return self._gm.bad_request(
-                "A connection to this project already exists in this workspace."
+                "A connection with these settings already exists in this workspace."
             )
         except Exception as e:
             logger.exception("Error creating integration connection", error=str(e))

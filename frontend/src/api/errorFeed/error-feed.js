@@ -1,6 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import axios, { endpoints } from "src/utils/axios";
 
+// Mirrors `DeepAnalysisResponse.status` on the backend
+// (futureagi/tracer/types/feed_types.py:DeepAnalysisResponse).
+export const DEEP_ANALYSIS_STATUS = Object.freeze({
+  IDLE: "idle",
+  RUNNING: "running",
+  DONE: "done",
+  FAILED: "failed",
+});
+
 const KEYS = {
   list: (params) => ["errorFeed", "list", params],
   stats: (params) => ["errorFeed", "stats", params],
@@ -184,7 +193,9 @@ export const useErrorFeedDeepAnalysis = (clusterId, traceId, options = {}) => {
     // selected data. Read the running flag off `query.state.data` (the raw
     // axios response — `select` doesn't apply here).
     refetchInterval: (query) =>
-      query.state.data?.data?.result?.status === "running" ? 5000 : false,
+      query.state.data?.data?.result?.status === DEEP_ANALYSIS_STATUS.RUNNING
+        ? 5000
+        : false,
     refetchIntervalInBackground: true,
   });
 };
@@ -218,7 +229,7 @@ export const useRunDeepAnalysis = () => {
         const traceIdValue =
           dispatched.trace_id ?? previousResult?.trace_id ?? null;
         const wipeOnRunning =
-          dispatched.status === "running"
+          dispatched.status === DEEP_ANALYSIS_STATUS.RUNNING
             ? {
                 root_causes: [],
                 rootCauses: [],

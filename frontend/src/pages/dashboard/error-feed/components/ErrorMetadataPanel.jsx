@@ -22,6 +22,7 @@ import Iconify from "src/components/iconify";
 import { paths } from "src/routes/paths";
 import { useSnackbar } from "src/components/snackbar";
 import {
+  DEEP_ANALYSIS_STATUS,
   useCreateLinearIssue,
   useErrorFeedDeepAnalysis,
   useErrorFeedSidebar,
@@ -1169,9 +1170,9 @@ function DeepAnalysisButton({ clusterId, traceId }) {
   );
   const runMutation = useRunDeepAnalysis();
 
-  const status = deepAnalysis?.status ?? "idle";
+  const status = deepAnalysis?.status ?? DEEP_ANALYSIS_STATUS.IDLE;
   const isDispatching = runMutation.isPending;
-  const isRunning = status === "running" || isDispatching;
+  const isRunning = status === DEEP_ANALYSIS_STATUS.RUNNING || isDispatching;
 
   const dispatch = (force) => {
     if (!traceId) return;
@@ -1180,12 +1181,12 @@ function DeepAnalysisButton({ clusterId, traceId }) {
       {
         onSuccess: (res) => {
           const newStatus = res?.data?.result?.status;
-          if (newStatus === "running") {
+          if (newStatus === DEEP_ANALYSIS_STATUS.RUNNING) {
             enqueueSnackbar(
               "Deep analysis started — takes about a minute. You can keep browsing; it'll show up here when ready.",
               { variant: "info", autoHideDuration: 6000 },
             );
-          } else if (newStatus === "done") {
+          } else if (newStatus === DEEP_ANALYSIS_STATUS.DONE) {
             // Cached result; frontend will scroll on its own via the
             // effect in OverviewTab that watches the done state.
             enqueueSnackbar("Showing existing analysis results.", {
@@ -1266,7 +1267,7 @@ function DeepAnalysisButton({ clusterId, traceId }) {
     );
   }
 
-  if (status === "done") {
+  if (status === DEEP_ANALYSIS_STATUS.DONE) {
     return (
       <Stack direction="row" alignItems="center" justifyContent="space-between">
         <Stack direction="row" alignItems="center" gap={0.5}>
@@ -1309,7 +1310,9 @@ function DeepAnalysisButton({ clusterId, traceId }) {
 
   // idle or failed
   const label =
-    status === "failed" ? "Retry Deep Analysis" : "Run Deep Analysis";
+    status === DEEP_ANALYSIS_STATUS.FAILED
+      ? "Retry Deep Analysis"
+      : "Run Deep Analysis";
   return (
     <Button
       variant="contained"
