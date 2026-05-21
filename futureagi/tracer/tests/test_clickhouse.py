@@ -2166,6 +2166,77 @@ class TestSessionListQueryBuilder:
         assert "count() AS total" in query2
         assert "GROUP BY" in query2
 
+    def test_build_excludes_nil_uuid(self):
+        """build() should exclude the ClickHouse nil UUID from session results."""
+        from tracer.services.clickhouse.query_builders import SessionListQueryBuilder
+
+        builder = SessionListQueryBuilder(
+            project_id="test-project-id",
+            filters=[],
+            page_number=0,
+            page_size=10,
+        )
+        query, _ = builder.build()
+        assert "00000000-0000-0000-0000-000000000000" in query
+
+    def test_count_query_excludes_nil_uuid(self):
+        """Both simple and aggregated count queries should exclude the nil UUID."""
+        from tracer.services.clickhouse.query_builders import SessionListQueryBuilder
+
+        # Simple count path
+        builder = SessionListQueryBuilder(
+            project_id="test-project-id",
+            filters=[],
+            page_number=0,
+            page_size=10,
+        )
+        builder.build()
+        query, _ = builder.build_count_query()
+        assert "00000000-0000-0000-0000-000000000000" in query
+
+        # Aggregated count path
+        builder2 = SessionListQueryBuilder(
+            project_id="test-project-id",
+            filters=[
+                {
+                    "column_id": "duration",
+                    "filter_config": {
+                        "filter_op": "greater_than",
+                        "filter_value": 60,
+                    },
+                }
+            ],
+            page_number=0,
+            page_size=10,
+        )
+        builder2.build()
+        query2, _ = builder2.build_count_query()
+        assert "00000000-0000-0000-0000-000000000000" in query2
+
+    def test_format_sessions_skips_nil_uuid(self):
+        """format_sessions() should drop rows with the nil UUID session_id."""
+        from datetime import datetime
+
+        from tracer.services.clickhouse.query_builders import SessionListQueryBuilder
+
+        columns = [
+            "session_id",
+            "session_start",
+            "session_end",
+            "duration",
+            "total_cost",
+            "total_tokens",
+            "traces_count",
+        ]
+        now = datetime.utcnow()
+        rows = [
+            ("00000000-0000-0000-0000-000000000000", now, now, 0, 0.0, 0, 1),
+            ("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", now, now, 10, 1.5, 100, 3),
+        ]
+        result = SessionListQueryBuilder.format_sessions(rows, columns)
+        assert len(result) == 1
+        assert result[0]["session_id"] == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
 
 @pytest.mark.unit
 class TestSessionListCountSkipLogic:
@@ -6963,6 +7034,12 @@ class TestSessionAnalyticsQueryBuilder:
         assert "count(DISTINCT trace_id)" in query
         assert "sum(total_tokens)" in query
         assert "sum(cost)" in query
+
+    def test_session_navigation_excludes_nil_uuid(self):
+        """Navigation query should exclude the ClickHouse nil UUID."""
+        builder = self._make_builder()
+        query, _ = builder.build_session_navigation_query()
+        assert "00000000-0000-0000-0000-000000000000" in query
 
     # -- User stats query --
 
