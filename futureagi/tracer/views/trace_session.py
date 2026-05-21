@@ -553,6 +553,7 @@ class TraceSessionView(BaseModelViewSetMixin, ModelViewSet):
                 WHERE trace_id IN %(trace_ids)s
                   AND custom_eval_config_id IN %(config_ids)s
                   AND _peerdb_is_deleted = 0
+                  AND (deleted = 0 OR deleted IS NULL)
                   AND output_str != 'ERROR'
                   AND (error = 0 OR error IS NULL)
                 GROUP BY trace_id, custom_eval_config_id
