@@ -390,6 +390,131 @@ def _preprocess_ssim(inputs):
     return inputs
 
 
+def _resolve_audio_input_to_bytes(value):
+    """Resolve an audio input (URL / data URI / local path / bytes) to raw bytes.
+
+    Returns ``(bytes, source_kind)`` on success, or ``None`` if the input is
+    empty or unreachable. SSRF guard mirrors the image path.
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value), "bytes"
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    if stripped.startswith("data:"):
+        try:
+            header, payload = stripped.split(",", 1)
+        except ValueError:
+            return None
+        if ";base64" in header:
+            try:
+                return base64.b64decode(payload), "data_uri"
+            except Exception:
+                return None
+        return None
+    if stripped.startswith(("http://", "https://")):
+        fetched = _fetch_url_bytes(stripped)
+        if fetched is None:
+            return None
+        data, _ = fetched
+        return data, "url"
+    if os.path.isfile(stripped):
+        try:
+            with open(stripped, "rb") as f:
+                return f.read(), "path"
+        except Exception:
+            return None
+    return None
+
+
+@register_preprocessor("dead_air_detection")
+def _preprocess_dead_air_detection(inputs):
+    """Compute silence statistics on the backend so the sandbox stays audio-free.
+
+    librosa lives in the API image but is not in the sandbox allowlist, and
+    the sandbox has no network access — so we resolve the audio URL here,
+    decode with librosa/soundfile, and pass the derived numbers to the
+    sandbox as ``_dead_air_*`` kwargs.
+    """
+    audio_value = inputs.get("input_audio")
+    if audio_value is None or audio_value == "":
+        inputs["_dead_air_error"] = "Missing input_audio"
+        return inputs
+
+    fetched = _resolve_audio_input_to_bytes(audio_value)
+    if fetched is None:
+        inputs["_dead_air_error"] = "Could not load audio input (unsupported URL, fetch blocked, or empty)"
+        return inputs
+
+    audio_bytes, _ = fetched
+
+    try:
+        import io
+        import librosa
+        import numpy as np
+    except ImportError as e:
+        logger.warning("dead_air_preprocess_import_failed", error=str(e))
+        inputs["_dead_air_error"] = f"Audio analysis unavailable: {e}"
+        return inputs
+
+    try:
+        silence_threshold = float(inputs.get("silence_threshold", 0.01))
+    except (TypeError, ValueError):
+        silence_threshold = 0.01
+
+    try:
+        y, sr = librosa.load(io.BytesIO(audio_bytes), sr=None)
+    except Exception as e:
+        logger.warning("dead_air_preprocess_decode_failed", error=str(e))
+        inputs["_dead_air_error"] = f"Could not decode audio: {e}"
+        return inputs
+
+    duration = float(librosa.get_duration(y=y, sr=sr))
+    if duration <= 0:
+        inputs["_dead_air_error"] = "Audio has zero duration"
+        return inputs
+
+    frame_length = max(1, int(0.1 * sr))
+    hop_length = max(1, frame_length // 2)
+    rms = librosa.feature.rms(y=y, frame_length=frame_length, hop_length=hop_length)[0]
+
+    silent_frames = rms < silence_threshold
+    total_frames = len(rms)
+    dead_air_duration = float(silent_frames.sum()) * (hop_length / sr)
+    dead_air_percentage = (dead_air_duration / duration) * 100.0
+
+    gaps_ms = []
+    in_gap = False
+    gap_start = 0
+    for i, is_silent in enumerate(silent_frames):
+        if is_silent and not in_gap:
+            in_gap = True
+            gap_start = i
+        elif not is_silent and in_gap:
+            in_gap = False
+            gaps_ms.append((i - gap_start) * (hop_length / sr) * 1000.0)
+    if in_gap:
+        gaps_ms.append((total_frames - gap_start) * (hop_length / sr) * 1000.0)
+    max_gap_ms = float(max(gaps_ms)) if gaps_ms else 0.0
+
+    inputs["_dead_air_percentage"] = float(dead_air_percentage)
+    inputs["_dead_air_max_gap_ms"] = max_gap_ms
+    inputs["_dead_air_duration_sec"] = duration
+    inputs["_dead_air_silence_threshold"] = silence_threshold
+
+    logger.info(
+        "dead_air_preprocessed",
+        duration_sec=round(duration, 2),
+        dead_air_pct=round(dead_air_percentage, 2),
+        max_gap_ms=round(max_gap_ms, 0),
+    )
+    return inputs
+
+
 @register_preprocessor("meteor_score")
 def _preprocess_meteor(inputs):
     """Compute METEOR via NLTK on the backend, inject the score as a kwarg.
