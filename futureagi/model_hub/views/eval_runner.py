@@ -72,11 +72,7 @@ from tfc.utils.error_codes import (
 from tfc.utils.functions import get_eval_stats
 from tfc.utils.general_methods import GeneralMethods
 from tfc.utils.parse_errors import parse_serialized_errors
-try:
-    from ee.usage.models.usage import APICallStatusChoices, APICallTypeChoices
-except ImportError:
-    APICallStatusChoices = None
-    APICallTypeChoices = None
+from tfc.constants.api_calls import APICallStatusChoices, APICallTypeChoices
 try:
     from ee.usage.utils.usage_entries import count_tiktoken_tokens, log_and_deduct_cost_for_api_request, refund_cost_for_api_call
 except ImportError:
@@ -1929,6 +1925,13 @@ class EvaluationRunner:
                 "custom_eval", False
             )
 
+        # Emptiness rules live in the shared validator so dataset,
+        # playground, tracing, and SDK paths apply the same logic.
+        from model_hub.utils.eval_input_validation import (
+            is_empty_value,
+            validate_eval_inputs,
+        )
+
         # Validate mapped required/optional keys only. Skip for user-built
         # custom evals so empty cells flow through to the eval (the template
         # can define explicit handling, e.g. a "No Input" choice). This keeps
@@ -1955,14 +1958,10 @@ class EvaluationRunner:
                     )
                 # Map back from key to row value via the ordered lists.
                 value = mapping[required_field.index(key)]
-                if _is_empty_value(value):
+                if is_empty_value(value):
                     raise ValueError(
                         f"No input received for '{key}'. Please check your input."
                     )
-
-        # Emptiness rules live in the shared validator so dataset,
-        # playground, tracing, and SDK paths apply the same logic.
-        from model_hub.utils.eval_input_validation import validate_eval_inputs
 
         values_for_validation = {
             key: mapping[required_field.index(key)]

@@ -378,6 +378,8 @@ const EvalPickerCreateNew = ({ onBack, onSave }) => {
       if (!code.trim()) next.instructions = "Code is required";
     } else if (!instructions.trim()) {
       next.instructions = "Instructions are required";
+    } else if (instructions.trim().length < 10) {
+      next.instructions = "Instructions must be at least 10 characters.";
     } else if (
       !hasDataInjection &&
       !/\{\{\s*[^{}]+?\s*\}\}/.test(instructions)
@@ -955,6 +957,11 @@ const EvalPickerCreateNew = ({ onBack, onSave }) => {
                     selectedDatasets={fewShotExamples}
                     onChange={setFewShotExamples}
                   />
+                  {errors.instructions && (
+                    <Typography variant="caption" color="error.main">
+                      {errors.instructions}
+                    </Typography>
+                  )}
                 </>
               )}
 
