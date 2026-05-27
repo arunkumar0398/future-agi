@@ -2,6 +2,7 @@ import json
 import time
 import traceback
 import uuid
+from decimal import Decimal
 
 import structlog
 from django.db import close_old_connections
@@ -435,8 +436,11 @@ def run_eval_func(
             actual_cost = llm_cost + per_run_fee
             _token_usage = getattr(eval_instance, "token_usage", {})
 
-            # Fallback cost for comparison logging
+            # Fallback cost for comparison logging and composite eval billing.
+            # Composite children can return token usage with a zero `cost`;
+            # in that case, charge model token pricing plus the per-run fee.
             _fallback_cost = 0
+            _pricing_source = ""
             try:
                 from agentic_eval.core_evals.fi_utils.token_count_helper import (
                     calculate_total_cost,
@@ -444,17 +448,35 @@ def run_eval_func(
 
                 _fallback = calculate_total_cost(model or "unknown", _token_usage)
                 _fallback_cost = _fallback.get("total_cost", 0)
+                _pricing_source = _fallback.get("pricing_source", "")
             except Exception:
                 pass
+
+            is_composite_source = source in {
+                "composite_eval",
+                "composite_eval_adhoc",
+                "composite_eval_dataset",
+                "tracer_composite",
+            }
+            cost_properties = {}
+            if is_composite_source and not llm_cost and _fallback_cost:
+                actual_cost = Decimal(str(_fallback_cost)) + Decimal(str(per_run_fee))
+                cost_properties = {
+                    "llm_cost_usd": str(_fallback_cost),
+                    "reported_llm_cost_usd": str(llm_cost),
+                    "llm_cost_source": "token_pricing",
+                    "pricing_source": _pricing_source,
+                }
 
             logger.info(
                 "eval_cost_breakdown",
                 template=template.name,
                 model=model,
-                llm_cost=llm_cost,
+                llm_cost=cost_properties.get("llm_cost_usd", llm_cost),
                 per_run_fee=per_run_fee,
                 actual_cost=actual_cost,
                 fallback_calculated_cost=_fallback_cost,
+                llm_cost_source=cost_properties.get("llm_cost_source"),
                 token_usage=getattr(eval_instance, "token_usage", {}),
             )
 
@@ -472,6 +494,7 @@ def run_eval_func(
                         "source": source,
                         "source_id": str(template.id),
                         "raw_cost_usd": str(actual_cost),
+                        **cost_properties,
                         **token_usage_properties(_token_usage),
                     },
                 )
