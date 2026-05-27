@@ -602,6 +602,68 @@ def _eval_config_output(custom_eval_config):
         return "score"
 
 
+def _emit_eval_billing(
+    org_id: str,
+    api_call_type,
+    source_id: str,
+    target_type: str,
+    result,
+    custom_eval_config,
+    ws_id: str | None,
+    api_call_log_row,
+    feedback_id=None,
+):
+    """Emit a UsageEvent for the new billing pipeline after a successful eval.
+
+    Centralizes the dual-write block used by span/trace/session eval paths.
+    Silently no-ops when ee billing modules are unavailable or on any error.
+    """
+    try:
+        from ee.usage.schemas.events import UsageEvent
+    except ImportError:
+        return
+    try:
+        from ee.usage.services.config import BillingConfig
+    except ImportError:
+        return
+    try:
+        from ee.usage.services.emitter import emit
+    except ImportError:
+        return
+    try:
+        from ee.usage.utils.event_properties import token_usage_properties
+    except ImportError:
+        token_usage_properties = lambda token_usage: {}
+
+    try:
+        billing_config = BillingConfig.get()
+        _llm_cost = (result.cost or {}).get("total_cost", 0)
+        _per_run_fee = billing_config.get_eval_per_run_fee()
+        _actual_cost = _llm_cost + _per_run_fee
+        _token_usage = result.token_usage or {}
+        credits = billing_config.calculate_ai_credits(_actual_cost)
+
+        emit(
+            UsageEvent(
+                org_id=org_id,
+                event_type=api_call_type,
+                amount=credits,
+                properties={
+                    "source": "tracer" if not feedback_id else "feedback",
+                    "source_id": source_id,
+                    "model": custom_eval_config.model or "",
+                    "workspace_id": ws_id or "",
+                    "log_id": str(api_call_log_row.log_id) if api_call_log_row else "",
+                    "raw_cost_usd": str(_actual_cost),
+                    "target_type": target_type,
+                    **token_usage_properties(_token_usage),
+                },
+            )
+        )
+    except Exception:
+        pass  # Metering failure must not break eval
+
+
 def _run_evaluation(
     run_params,
     eval_model,
@@ -732,7 +794,12 @@ def _run_evaluation(
                 from ee.usage.services.emitter import emit
             except ImportError:
                 emit = None
-
+            try:
+                from ee.usage.utils.event_properties import token_usage_properties
+            except ImportError:
+                token_usage_properties = lambda token_usage: {}
+            
+            _token_usage = getattr(eval_instance, "token_usage", {})
             actual_cost = getattr(eval_instance, "cost", {}).get("total_cost", 0)
             credits = 0
             if BillingConfig is not None:
@@ -751,6 +818,7 @@ def _run_evaluation(
                             "workspace_id": str(workspace.id) if workspace else "",
                             "log_id": str(api_call_log_row.log_id) if api_call_log_row else None,
                             "raw_cost_usd": str(actual_cost),
+                            **token_usage_properties(_token_usage),
                         },
                     )
                 )
@@ -1361,6 +1429,19 @@ def _execute_evaluation(
             api_call_log_row.config = json.dumps(config_dict)
             api_call_log_row.status = APICallStatusChoices.SUCCESS.value
             api_call_log_row.save()
+
+        # Dual-write: emit usage event for new billing system (cost-based)
+        _emit_eval_billing(
+            org_id=org_id,
+            api_call_type=api_call_type,
+            source_id=str(eval_model.id),
+            target_type=EvalTargetType.SPAN.value,
+            result=result,
+            custom_eval_config=custom_eval_config,
+            ws_id=ws_id,
+            api_call_log_row=api_call_log_row,
+            feedback_id=feedback_id,
+        )
 
         # Parse metadata
         metadata = result.metadata
@@ -2607,6 +2688,19 @@ def _execute_evaluation_for_trace(
             api_call_log_row.status = APICallStatusChoices.SUCCESS.value
             api_call_log_row.save()
 
+        # Dual-write: emit usage event for new billing system (cost-based)
+        _emit_eval_billing(
+            org_id=org_id,
+            api_call_type=api_call_type,
+            source_id=str(eval_template.id),
+            target_type=EvalTargetType.TRACE.value,
+            result=result,
+            custom_eval_config=custom_eval_config,
+            ws_id=ws_id,
+            api_call_log_row=api_call_log_row,
+            feedback_id=feedback_id,
+        )
+
         metadata = result.metadata
         if isinstance(metadata, str):
             try:
@@ -2829,6 +2923,19 @@ def _execute_evaluation_for_session(
             api_call_log_row.config = json.dumps(config_dict)
             api_call_log_row.status = APICallStatusChoices.SUCCESS.value
             api_call_log_row.save()
+
+        # Dual-write: emit usage event for new billing system (cost-based)
+        _emit_eval_billing(
+            org_id=org_id,
+            api_call_type=api_call_type,
+            source_id=str(eval_template.id),
+            target_type=EvalTargetType.SESSION.value,
+            result=result,
+            custom_eval_config=custom_eval_config,
+            ws_id=ws_id,
+            api_call_log_row=api_call_log_row,
+            feedback_id=feedback_id,
+        )
 
         metadata = result.metadata
         if isinstance(metadata, str):
