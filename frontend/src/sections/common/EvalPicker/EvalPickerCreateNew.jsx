@@ -382,12 +382,15 @@ const EvalPickerCreateNew = ({ onBack, onSave }) => {
       next.instructions = "Instructions are required";
     } else if (instructions.trim().length < 10) {
       next.instructions = "Instructions must be at least 10 characters.";
-    } else if (
-      !hasDataInjection &&
-      !/\{\{\s*[^{}]+?\s*\}\}/.test(instructions)
-    ) {
-      next.instructions =
-        "Instructions must contain at least one template variable (e.g. {{input}})";
+    } else if (!hasDataInjection) {
+      const hasVar =
+        templateFormat === "jinja"
+          ? extractJinjaVariables(instructions).length > 0
+          : /\{\{\s*[^{}]+?\s*\}\}/.test(instructions);
+      if (!hasVar) {
+        const dialect = templateFormat === "jinja" ? "Jinja" : "Mustache";
+        next.instructions = `Instructions must contain at least one ${dialect} variable (e.g. {{input}})`;
+      }
     }
 
     if (!sourceReady && source !== "composite" && !hasDataInjection) {
@@ -623,17 +626,42 @@ const EvalPickerCreateNew = ({ onBack, onSave }) => {
   // `source === "composite"` means this drawer was opened from a composite's
   // child picker with no dataset bound — there's no variable mapping to
   // complete here, so don't gate saving on `sourceReady`.
+  const hasTemplateVariable =
+    templateFormat === "jinja"
+      ? extractJinjaVariables(instructions).length > 0
+      : /\{\{\s*[^{}]+?\s*\}\}/.test(instructions);
+
   const needsTemplateVariable =
-    evalType !== "code" &&
-    !hasDataInjection &&
-    !/\{\{\s*[^{}]+?\s*\}\}/.test(instructions);
+    evalType !== "code" && !hasDataInjection && !hasTemplateVariable;
 
   const canSave = isComposite
     ? !!name.trim() && selectedChildren.length > 0
     : name.trim() &&
-      (evalType === "code" ? code.trim() : instructions.trim()) &&
-      !needsTemplateVariable &&
+      (evalType === "code"
+        ? code.trim()
+        : instructions.trim() && !needsTemplateVariable) &&
       (source === "composite" || sourceReady || hasDataInjection);
+
+  const getDisabledReason = () => {
+    if (!name.trim()) return "Name is required";
+    if (isComposite) {
+      if (selectedChildren.length === 0) {
+        return "Select at least one child evaluation";
+      }
+      return null;
+    }
+    if (evalType === "code") {
+      if (!code.trim()) return "Code is required";
+      return null;
+    }
+    if (!instructions.trim()) return "Instructions are required";
+    if (needsTemplateVariable) {
+      const dialect = templateFormat === "jinja" ? "Jinja" : "Mustache";
+      return `Instructions must contain at least one ${dialect} variable (e.g. {{input}})`;
+    }
+    return null;
+  };
+  const disabledReason = getDisabledReason();
 
   // Variables from instructions
   const variables = useMemo(() => {
@@ -1290,8 +1318,8 @@ const EvalPickerCreateNew = ({ onBack, onSave }) => {
           condition={!hasDataInjection }
         >
           <CustomTooltip
-            show={needsTemplateVariable}
-            title="Instructions must contain at least one template variable (e.g. {{input}})"
+            show={!!disabledReason}
+            title={disabledReason || ""}
             arrow
             size="small"
             type="black"
@@ -1304,7 +1332,7 @@ const EvalPickerCreateNew = ({ onBack, onSave }) => {
                 onClick={handleTestEvaluation}
                 disabled={
                   isTesting ||
-                  needsTemplateVariable ||
+                  !!disabledReason ||
                   (!sourceReady && !hasDataInjection) ||
                   !draftId ||
                   isComposite ||
@@ -1326,8 +1354,8 @@ const EvalPickerCreateNew = ({ onBack, onSave }) => {
         </ShowComponent>
 
         <CustomTooltip
-          show={needsTemplateVariable}
-          title="Instructions must contain at least one template variable (e.g. {{input}})"
+          show={!!disabledReason}
+          title={disabledReason || ""}
           arrow
           size="small"
           type="black"

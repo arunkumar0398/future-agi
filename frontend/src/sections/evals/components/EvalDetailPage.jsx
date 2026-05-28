@@ -601,11 +601,22 @@ const EvalDetailPage = () => {
     Array.isArray(contextOptions) &&
     contextOptions.some((o) => o && o !== "variables_only");
 
+  const hasTemplateVariable =
+    templateFormat === "jinja"
+      ? extractJinjaVariables(instructions).length > 0
+      : /\{\{\s*[^{}]+?\s*\}\}/.test(instructions);
+
   const needsTemplateVariable =
     evalType !== "code" &&
     !hasDataInjection &&
     !isComposite &&
-    !/\{\{\s*[^{}]+?\s*\}\}/.test(instructions);
+    !hasTemplateVariable;
+
+  const variableTooltip = !instructions?.trim()
+    ? "Instructions are required"
+    : needsTemplateVariable
+      ? `Instructions must contain at least one ${templateFormat === "jinja" ? "Jinja" : "Mustache"} variable (e.g. {{input}})`
+      : "";
 
   // Fetch composite detail (children, weights) when viewing a composite
   const { data: compositeDetail } = useCompositeDetail(evalId, isComposite);
@@ -1854,11 +1865,10 @@ const EvalDetailPage = () => {
 
                   <Tooltip
                     title={
-                      needsTemplateVariable
-                        ? "Instructions must contain at least one template variable (e.g. {{input}})"
-                        : !isPlaygroundReady && !isTesting
-                          ? "Map all required keys before running"
-                          : ""
+                      variableTooltip ||
+                      (!isPlaygroundReady && !isTesting
+                        ? "Map all required keys before running"
+                        : "")
                     }
                     placement="top"
                   >
@@ -1890,8 +1900,8 @@ const EvalDetailPage = () => {
                   </Tooltip>
                   {!isSystemEval && !isComposite && (
                     <CustomTooltip
-                      show={needsTemplateVariable}
-                      title="Instructions must contain at least one template variable (e.g. {{input}})"
+                      show={!!variableTooltip}
+                      title={variableTooltip}
                       arrow
                       size="small"
                       type="black"
