@@ -1476,12 +1476,12 @@ class TraceSessionView(BaseModelViewSetMixin, ModelViewSet):
                 }
             filters.append(
                 {
-                    "column_id": "user_id",
+                    "column_id": "end_user_id",
                     "filter_config": {
                         "col_type": "SYSTEM_METRIC",
                         "filter_type": "text",
-                        "filter_op": "equals",
-                        "filter_value": user_id_qp,
+                        "filter_op": "in",
+                        "filter_value": _ids,
                     },
                 }
             )

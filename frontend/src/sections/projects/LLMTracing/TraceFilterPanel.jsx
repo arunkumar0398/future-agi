@@ -174,7 +174,6 @@ const ANNOTATOR_OPS = [{ value: "is", label: "is" }];
 // Direct ID columns on `spans`. UUIDs don't need substring/null ops —
 // restrict to equality (canonical IN / NOT IN, multi-select on the value
 // picker).
-const ID_ONLY_FIELDS = new Set(["trace_id", "span_id", "session"]);
 const ID_ONLY_OPS = [
   { value: "in", label: "equals" },
   { value: "not_in", label: "not equals" },
