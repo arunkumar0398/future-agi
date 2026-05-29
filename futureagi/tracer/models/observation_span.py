@@ -28,6 +28,7 @@ class UserIdType(models.TextChoices):
     EMAIL = "email", "Email"
     PHONE = "phone", "Phone"
     UUID = "uuid", "UUID"
+    CUSTOM = "custom", "Custom"
 
 
 class ObservationType(models.TextChoices):
@@ -49,7 +50,6 @@ class ObservationType(models.TextChoices):
     GUARDRAIL = "guardrail", "Guardrail"
     EVALUATOR = "evaluator", "Evaluator"
     CONVERSATION = "conversation", "Conversation"
-    CUSTOM = "custom", "Custom"
 
 
 class EndUser(BaseModel):
