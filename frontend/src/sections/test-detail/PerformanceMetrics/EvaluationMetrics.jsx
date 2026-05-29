@@ -122,7 +122,7 @@ export default function EvaluationMetrics({
         >
           <Typography
             typography={"body1"}
-            color={"text.disabled"}
+            color={"text.secondary"}
             fontWeight={"fontWeightRegular"}
           >
             No evaluation metrics added
