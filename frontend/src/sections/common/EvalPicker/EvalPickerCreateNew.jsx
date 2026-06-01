@@ -394,7 +394,7 @@ const EvalPickerCreateNew = ({ onBack, onSave }) => {
       }
     }
 
-    if (!sourceReady && source !== "composite" && !hasDataInjection) {
+    if (!sourceReady && source !== "composite") {
       next.mapping = "Map all variables before saving";
     }
 
@@ -641,7 +641,7 @@ const EvalPickerCreateNew = ({ onBack, onSave }) => {
       (evalType === "code"
         ? code.trim()
         : instructions.trim() && !needsTemplateVariable) &&
-      (source === "composite" || sourceReady || hasDataInjection);
+      (source === "composite" || sourceReady);
 
   const getDisabledReason = () => {
     if (!name.trim()) return "Name is required";
@@ -1194,6 +1194,7 @@ const EvalPickerCreateNew = ({ onBack, onSave }) => {
                     onTestResult={handleTestResult}
                     onColumnsLoaded={handleColumnsLoaded}
                     onReadyChange={handleSourceReadyChange}
+                    hasDataInjection={hasDataInjection}
                     initialProjectId={sourceId}
                     initialRowType={sourceRowType}
                     isComposite={isComposite}
@@ -1209,6 +1210,7 @@ const EvalPickerCreateNew = ({ onBack, onSave }) => {
                     onTestResult={handleTestResult}
                     onColumnsLoaded={handleColumnsLoaded}
                     onReadyChange={handleSourceReadyChange}
+                    hasDataInjection={hasDataInjection}
                     onRowTypeChange={handleSourceRowTypeChange}
                     isComposite={isComposite}
                     compositeAdhocConfig={compositeAdhocConfig}
@@ -1306,7 +1308,7 @@ const EvalPickerCreateNew = ({ onBack, onSave }) => {
             </Typography>
           </Box>
         )}
-        {!sourceReady && !hasDataInjection && !testError && !testPassed && (
+        {!sourceReady && !testError && !testPassed && (
           <Typography
             variant="caption"
             color="text.secondary"
@@ -1336,7 +1338,7 @@ const EvalPickerCreateNew = ({ onBack, onSave }) => {
                 disabled={
                   isTesting ||
                   !!disabledReason ||
-                  (!sourceReady && !hasDataInjection) ||
+                  !sourceReady ||
                   !draftId ||
                   isComposite ||
                   source === "workbench"
