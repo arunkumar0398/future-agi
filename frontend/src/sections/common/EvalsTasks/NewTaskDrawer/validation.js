@@ -4,25 +4,95 @@ import { z } from "zod";
 const RANGE_OPS = new Set(["between", "not_between"]);
 const LIST_OPS = new Set(["in", "not_in"]);
 
+// Maps a form-row `property` to the outer-filters-dict sibling key the
+// BE honors (see `parsing_evaltask_filters` in tracer/utils/eval_tasks.py).
+//
+// `node_type` is the FE-side alias for `observation_type`; the SYSTEM_METRIC
+// handler doesn't translate it (its DEFAULT_FIELD_MAP entry points at the
+// non-existent `node_type` Django field, relying on the caller having
+// annotated `node_type=F("observation_type")` the way list_spans_observe
+// does at observation_span.py:1617). process_eval_task doesn't replicate
+// that annotate, so we route the chip via the BE's direct
+// observation_type sibling branch instead.
+const TOP_LEVEL_SIBLING_KEY_BY_PROPERTY = {
+  observation_type: "observation_type",
+  node_type: "observation_type",
+  session_id: "session_id",
+};
+
+// Column ids the BE always routes via its annotation handler regardless
+// of col_type (filters.py:1711-1755 in get_filter_conditions_for_voice_call_annotations).
+// Forcing col_type=ANNOTATION on the wire keeps the eval-task dispatcher
+// from also feeding the same row to the SPAN_ATTRIBUTE / SYSTEM_METRIC
+// handlers — where it'd otherwise match no rows and poison the AND.
+const ANNOTATION_COLUMN_IDS = new Set(["annotator", "my_annotations"]);
+
+// fieldCategory → col_type fallback. Used when the form row didn't
+// carry an apiColType (e.g. the panel's static system fields at
+// TraceFilterPanel.jsx:1650-1666 don't set one). Mirrors the
+// PANEL_CAT_TO_COL_TYPE in TaskFilterBar.jsx — duplicated here so the
+// wire encoding is correct even if the form-row producer skipped it.
+const FIELD_CATEGORY_TO_COL_TYPE = {
+  attribute: "SPAN_ATTRIBUTE",
+  system: "SYSTEM_METRIC",
+  eval: "EVAL_METRIC",
+  annotation: "ANNOTATION",
+};
+
 // Group multiple form rows for the same (columnId, op) into a single wire
 // entry. Scalar rows for list ops collapse to array `filterValue`; multiple
 // scalar rows for a single-value op (legacy multi-value `equals` from saved
 // tasks) are promoted to `in` so the BE filter validator accepts them.
+//
+// Mirrors `list_spans_observe`'s shape (observation_span.py:1755-1826):
+// every chip — SPAN_ATTRIBUTE, SYSTEM_METRIC, EVAL_METRIC, ANNOTATION,
+// has_eval, has_annotation, annotator — goes into the same flat list with
+// its own `col_type`. The dispatcher fans out per col_type on the BE.
 export const extractAttributeFilters = (filters) => {
   const merged = new Map();
   (filters || [])
-    .filter((f) => f?.property === "attributes")
+    .filter((f) => {
+      if (!f) return false;
+      // Sibling top-level keys (observation_type, node_type → observation_type,
+      // session_id) are emitted separately by `getNewTaskFilters`.
+      if (f.property in TOP_LEVEL_SIBLING_KEY_BY_PROPERTY) return false;
+      // Hydrated legacy rows with no apiColType and no propertyId are
+      // BE no-ops anyway — drop them.
+      if (!f.propertyId && f.property !== "attributes") return false;
+      return true;
+    })
     .forEach((f) => {
-      const columnId = f.propertyId;
+      const columnId = f.propertyId || f.property;
       if (!columnId) return;
       const op = f?.filterConfig?.filterOp || "equals";
       const filterType = f?.filterConfig?.filterType || "text";
       const key = `${columnId}|${op}|${filterType}`;
       if (!merged.has(key)) {
+        // Resolution order:
+        //   1. ANNOTATION_COLUMN_IDS — annotator / my_annotations are
+        //      always ANNOTATION regardless of what the panel said.
+        //   2. row's explicit apiColType (set by TaskFilterBar via
+        //      resolveApiColType — the canonical source).
+        //   3. fieldCategory mapping (covers form rows whose
+        //      apiColType was lost upstream, e.g. when the panel's
+        //      static system fields skipped setting it).
+        //   4. SPAN_ATTRIBUTE default (last resort).
+        let apiColType;
+        if (ANNOTATION_COLUMN_IDS.has(columnId)) {
+          apiColType = "ANNOTATION";
+        } else if (f?.apiColType) {
+          apiColType = f.apiColType;
+        } else if (FIELD_CATEGORY_TO_COL_TYPE[f?.fieldCategory]) {
+          apiColType = FIELD_CATEGORY_TO_COL_TYPE[f.fieldCategory];
+        } else {
+          apiColType = "SPAN_ATTRIBUTE";
+        }
+
         merged.set(key, {
           columnId,
           op,
           filterType,
+          apiColType,
           rangeValue: undefined,
           values: [],
         });
@@ -62,36 +132,43 @@ export const extractAttributeFilters = (filters) => {
       filterConfig: {
         filterType: entry.filterType,
         filterOp,
-        colType: "SPAN_ATTRIBUTE",
+        colType: entry.apiColType,
         ...(filterValue !== undefined && { filterValue }),
       },
     };
   });
 };
 
-export const getNewTaskFilters = (data, projectId, ignoreDate = false) => {
-  const filters = { project_id: projectId?.length ? projectId : null };
-
-  const attributeFilters = extractAttributeFilters(data?.filters);
-
-  // System filters: spread array `filterValue` (from canonical `in`/`not_in`
-  // or `between` rows) into the per-field array so the BE wire stays in the
-  // historical `{ field: [v1, v2, ...] }` shape it expects.
-  data?.filters?.forEach((filter) => {
-    if (filter?.property === "attributes") return;
-    const val = filter?.filterConfig?.filterValue;
+// Extract rows whose property maps to a BE-honored sibling top-level key
+// (observation_type / node_type → observation_type, session_id). Each
+// contributes its values to a flat per-field array on the outer filters
+// dict, with the property renamed to the BE-side key when they differ.
+const extractSiblingFilters = (filters) => {
+  const out = {};
+  (filters || []).forEach((f) => {
+    const beKey = TOP_LEVEL_SIBLING_KEY_BY_PROPERTY[f?.property];
+    if (!beKey) return;
+    const val = f?.filterConfig?.filterValue;
     const vals = Array.isArray(val)
       ? val
       : val !== undefined && val !== null && val !== ""
         ? [val]
         : [];
     if (vals.length === 0) return;
-    if (filter?.property in filters) {
-      filters[filter?.property].push(...vals);
+    if (out[beKey]) {
+      out[beKey].push(...vals);
     } else {
-      filters[filter?.property] = [...vals];
+      out[beKey] = [...vals];
     }
   });
+  return out;
+};
+
+export const getNewTaskFilters = (data, projectId, ignoreDate = false) => {
+  const filters = { project_id: projectId?.length ? projectId : null };
+
+  const attributeFilters = extractAttributeFilters(data?.filters);
+  Object.assign(filters, extractSiblingFilters(data?.filters));
 
   if (data?.runType === "historical" && !ignoreDate) {
     filters["date_range"] = [
@@ -183,7 +260,7 @@ export const NewTaskValidationSchema = () =>
         filters: {
           ...filters,
           ...(attributeFilters && attributeFilters?.length > 0
-            ? { span_attributes_filters: attributeFilters }
+            ? { filters: attributeFilters }
             : {}),
         },
       };

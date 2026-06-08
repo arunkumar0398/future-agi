@@ -249,24 +249,22 @@ const DetailsEdit = ({
   });
 
   const onUpdateSubmit = (data, editType) => {
+    // extractAttributeFilters now returns every chip (SPAN_ATTRIBUTE,
+    // SYSTEM_METRIC, EVAL_METRIC, ANNOTATION, has_*) as a flat list with
+    // `col_type` — matches list_spans_observe / the new BE dispatcher.
+    // observation_type still rides as a sibling key.
     const attributeFilters = extractAttributeFilters(data?.filters);
-
-    // Generic system filter aggregation — every non-attribute filter
-    // row contributes its value to a BE key named after `f.property`.
-    // Mirrors the create-side getNewTaskFilters (validation.js) so
-    // span_kind, latency_ms, total_tokens, etc. all round-trip without
-    // each one being hard-coded.
-    const systemFilters = {};
-    (data.filters || []).forEach((f) => {
-      if (!f?.property || f.property === "attributes") return;
-      const v = f?.filterConfig?.filterValue;
-      if (v === undefined || v === null || v === "") return;
-      if (systemFilters[f.property]) {
-        systemFilters[f.property].push(v);
-      } else {
-        systemFilters[f.property] = [v];
-      }
-    });
+    // node_type is the FE alias for observation_type — both end up in
+    // the outer `observation_type` sibling key (see TaskDetailPage.jsx).
+    const observationTypes = (data.filters || [])
+      .filter(
+        (f) => f.property === "observation_type" || f.property === "node_type",
+      )
+      .flatMap((f) => {
+        const v = f?.filterConfig?.filterValue;
+        if (Array.isArray(v)) return v;
+        return v !== undefined && v !== null && v !== "" ? [v] : [];
+      });
 
     const transformedData = {
       evals: data.evalsDetails?.map((item) => item.id) || [],
@@ -276,9 +274,11 @@ const DetailsEdit = ({
           new Date(startDateField.value).toISOString(),
           new Date(endDateField.value).toISOString(),
         ],
-        ...systemFilters,
+        ...(observationTypes?.length > 0
+          ? { observation_type: observationTypes }
+          : {}),
         ...(attributeFilters && attributeFilters?.length > 0
-          ? { span_attributes_filters: attributeFilters }
+          ? { filters: attributeFilters }
           : {}),
       },
       project_id: data.project,

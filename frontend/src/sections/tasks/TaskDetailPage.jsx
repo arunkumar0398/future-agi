@@ -131,12 +131,19 @@ const TaskDetailPage = () => {
   const handleConfirm = useCallback(
     (editType) => {
       const data = formValues;
+      // extractAttributeFilters now returns every chip (SPAN_ATTRIBUTE,
+      // SYSTEM_METRIC, EVAL_METRIC, ANNOTATION, has_*) as a flat list
+      // with `col_type` (matches list_spans_observe / the new BE
+      // dispatcher). observation_type still rides as a sibling key.
       const attributeFilters = extractAttributeFilters(data?.filters);
-      // observation_type rows may now carry an array `filterValue` (canonical
-      // `in`/`not_in`) or a scalar (legacy `equals`). Flatten + drop empties
-      // so the BE always sees a flat list of selected values.
+      // node_type is the FE alias for observation_type — both end up in
+      // the outer `observation_type` sibling key (the BE's SYSTEM_METRIC
+      // handler can't resolve `node_type` against ObservationSpan
+      // directly, but its dedicated observation_type branch can).
       const observationTypes = (data.filters || [])
-        .filter((f) => f.property === "observation_type")
+        .filter(
+          (f) => f.property === "observation_type" || f.property === "node_type",
+        )
         .flatMap((f) => {
           const v = f?.filterConfig?.filterValue;
           if (Array.isArray(v)) return v;
@@ -155,7 +162,7 @@ const TaskDetailPage = () => {
             ? { observation_type: observationTypes }
             : {}),
           ...(attributeFilters?.length > 0
-            ? { span_attributes_filters: attributeFilters }
+            ? { filters: attributeFilters }
             : {}),
         },
         project_id: data.project,

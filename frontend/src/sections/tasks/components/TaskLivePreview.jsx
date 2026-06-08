@@ -49,12 +49,22 @@ import { NULL_OPERATORS } from "src/components/ComplexFilter/common";
 // ───────────────────────────────────────────────────────────────
 // Helpers (ported from TracingTestMode)
 // ───────────────────────────────────────────────────────────────
+// Maps a TraceFilterPanel `fieldCategory` to its BE col_type enum value.
+// Used only as a fallback — the row's `apiColType` is the source of truth
+// when present (set by TaskFilterBar.convertNewToOld from the panel's
+// property metadata).
 const COL_TYPE_MAP = {
   attribute: "SPAN_ATTRIBUTE",
   system: "SYSTEM_METRIC",
-  eval: "EVALUATION_METRIC",
+  eval: "EVAL_METRIC",
   annotation: "ANNOTATION",
 };
+
+// Column ids the BE always routes through its annotation handler
+// regardless of col_type. Forcing ANNOTATION on the wire keeps the
+// row from also being picked up by non-annotation handlers (see the
+// matching set in NewTaskDrawer/validation.js).
+const ANNOTATION_COLUMN_IDS = new Set(["annotator", "my_annotations"]);
 
 const RANGE_OPS = new Set(["between", "not_between"]);
 const LIST_OPS = new Set(["in", "not_in"]);
@@ -78,6 +88,10 @@ function mergeRowsByFieldAndOp(rows) {
       merged.set(key, {
         columnId,
         fieldCategory: f.fieldCategory,
+        // Preserved straight from TaskFilterBar.convertNewToOld so the
+        // downstream colType derivation matches the panel's property
+        // metadata (annotator → ANNOTATION, b6a017ba… → EVAL_METRIC, …).
+        apiColType: f.apiColType,
         op,
         filterType,
         isAttribute,
@@ -105,9 +119,16 @@ export function buildApiFilterArray(oldFormatFilters, startDate, endDate) {
   const userFilters = mergeRowsByFieldAndOp(oldFormatFilters || []).map(
     (entry) => {
       const isIdColumn = ID_ONLY_FIELDS.has(entry.columnId);
-      const colType =
-        COL_TYPE_MAP[entry.fieldCategory] ||
-        (entry.isAttribute ? "SPAN_ATTRIBUTE" : "SYSTEM_METRIC");
+      // `apiColType` from the panel is the source of truth; `fieldCategory`
+      // is a UI-side label, and the `isAttribute` boolean only distinguishes
+      // SPAN_ATTRIBUTE from "anything else" — neither can tell EVAL_METRIC
+      // apart from ANNOTATION or SYSTEM_METRIC on its own. Annotation-
+      // special column_ids are pinned to ANNOTATION (see ANNOTATION_COLUMN_IDS).
+      const colType = ANNOTATION_COLUMN_IDS.has(entry.columnId)
+        ? "ANNOTATION"
+        : entry.apiColType ||
+          COL_TYPE_MAP[entry.fieldCategory] ||
+          (entry.isAttribute ? "SPAN_ATTRIBUTE" : "SYSTEM_METRIC");
       let filterValue;
       if (NO_VALUE_OPS.has(entry.op)) {
         filterValue = "";

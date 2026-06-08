@@ -1654,12 +1654,18 @@ const TraceFilterPanel = ({
           name: "Span Name",
           category: "system",
           type: "string",
+          apiColType: "SYSTEM_METRIC",
         };
       }
       return {
         id: f.value,
         name: f.label,
         category: "system",
+        // Pinned so the eval-task wire encoding doesn't have to guess
+        // from `category` alone — without this every static field would
+        // round-trip through the chain with apiColType=undefined and
+        // get coerced to SPAN_ATTRIBUTE downstream.
+        apiColType: "SYSTEM_METRIC",
         type: f.type === "enum" ? "string" : f.type,
         ...(f.choices ? { choices: f.choices } : {}),
       };
