@@ -398,6 +398,13 @@ function metricToTraceFilterProperty(m) {
   // thumbs labels have two fixed choices — surface them so the value picker
   // renders a multi-select without needing a dashboard lookup.
   const choices = type === "thumbs" ? ["Thumbs Up", "Thumbs Down"] : m.choices;
+  const apiColType = isEval
+    ? "EVAL_METRIC"
+    : isAnnotation
+      ? "ANNOTATION"
+      : m.category === "system_metric" || m.category === "systemMetric"
+        ? "SYSTEM_METRIC"
+        : "SPAN_ATTRIBUTE";
   return {
     id: m.name,
     name: m.displayName || m.display_name || m.name,
@@ -406,6 +413,7 @@ function metricToTraceFilterProperty(m) {
     type,
     outputType,
     choices,
+    apiColType,
   };
 }
 

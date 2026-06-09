@@ -195,9 +195,7 @@ export const NewTaskValidationSchema = () =>
         .min(1, { message: "At least one evaluation is required" })
         .refine(
           (evals) =>
-            evals.every(
-              (e) => typeof e?.id === "string" && e.id.length > 0,
-            ),
+            evals.every((e) => typeof e?.id === "string" && e.id.length > 0),
           {
             message:
               "Remove the highlighted evaluation(s) and re-add them before continuing.",
@@ -213,20 +211,22 @@ export const NewTaskValidationSchema = () =>
       // the transform runs and the form-state value (set by the
       // Spans/Traces/Sessions tabs in TaskConfigPanel) is silently
       // dropped — every payload then defaults to "spans".
-      rowType: z
-        .enum(["spans", "traces", "sessions", "voiceCalls"])
-        .optional(),
+      rowType: z.enum(["spans", "traces", "sessions", "voiceCalls"]).optional(),
       filters: z
         .array(
           z.object({
             id: z.string().optional(),
             propertyId: z.string().optional(),
             property: z.string().optional(),
+            fieldCategory: z.string().optional(),
+            fieldLabel: z.string().optional(),
+            apiColType: z.string().optional(),
             filterConfig: z
               .object({
                 filterType: z.string().optional(),
                 filterOp: z.any().optional(),
                 filterValue: z.any().optional(),
+                colType: z.string().optional(),
               })
               .optional(),
           }),
