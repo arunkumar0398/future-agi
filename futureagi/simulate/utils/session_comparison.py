@@ -527,38 +527,31 @@ def fetch_simulated_call_recordings(call_execution: CallExecution) -> dict:
             return None
         return url
 
-    recordings = _fallback_model_recordings(call_execution)
-    if recordings:
-        return recordings
+    model_recordings = _fallback_model_recordings(call_execution)
 
     provider_data = call_execution.provider_call_data
-    if not provider_data or not isinstance(provider_data, dict):
-        return {}
-
-    if len(provider_data) == 1:
-        payload = next(iter(provider_data.values()))
-    else:
+    payload = None
+    if isinstance(provider_data, dict):
         payload = provider_data.get("vapi", {})
-
     if not isinstance(payload, dict):
-        return {}
+        payload = {}
 
     recording = (
-        payload.get("artifact", {}).get("recording") or payload.get("recording") or {}
+        (payload.get("artifact") or {}).get("recording") or payload.get("recording") or {}
     )
     if not isinstance(recording, dict):
-        return {}
+        recording = {}
 
-    recordings = {}
     mono = recording.get("mono") or {}
-    if combined_url := _safe(mono.get("combinedUrl")):
-        recordings["mono_combined"] = combined_url
+    recordings: dict[str, str] = {}
+    if combined := model_recordings.get("mono_combined") or _safe(mono.get("combinedUrl")):
+        recordings["mono_combined"] = combined
+    if stereo := model_recordings.get("stereo") or _safe(recording.get("stereoUrl")):
+        recordings["stereo"] = stereo
     if customer_url := _safe(mono.get("customerUrl")):
         recordings["mono_customer"] = customer_url
     if assistant_url := _safe(mono.get("assistantUrl")):
         recordings["mono_assistant"] = assistant_url
-    if stereo_url := _safe(recording.get("stereoUrl")):
-        recordings["stereo"] = stereo_url
 
     return recordings
 

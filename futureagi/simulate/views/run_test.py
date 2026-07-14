@@ -3539,9 +3539,10 @@ class CallExecutionLogsView(APIView):
                                 VapiRecordingService,
                             )
 
-                            agent_def = getattr(
-                                call_execution, "agent_definition", None
+                            test_exec = getattr(
+                                call_execution, "test_execution", None
                             )
+                            agent_def = getattr(test_exec, "agent_definition", None) if test_exec else None
                             if agent_def is not None:
                                 provider_api_key = (
                                     VapiRecordingService.get_api_key_for_agent_definition(

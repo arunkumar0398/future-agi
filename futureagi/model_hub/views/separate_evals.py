@@ -5302,13 +5302,13 @@ def _build_span_context(span) -> dict:
     base["recording_url"] = (
         sa.get("recording_url")
         or sa.get("recordingUrl")
-        or raw_log.get("artifact", {}).get("recording", {}).get("mono", {}).get("combinedUrl")
+        or (raw_log.get("artifact") or {}).get("recording", {}).get("mono", {}).get("combinedUrl")
         or raw_log.get("recordingUrl")
         or raw_log.get("recording_url")
     )
     base["stereo_recording_url"] = (
         sa.get("stereo_recording_url")
-        or raw_log.get("artifact", {}).get("recording", {}).get("stereoUrl")
+        or (raw_log.get("artifact") or {}).get("recording", {}).get("stereoUrl")
         or raw_log.get("stereoRecordingUrl")
         or raw_log.get("stereo_recording_url")
     )

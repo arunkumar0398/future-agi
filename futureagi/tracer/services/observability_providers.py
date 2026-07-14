@@ -350,12 +350,14 @@ class ObservabilityService:
         status = "completed" if raw_log_get("status") == "ended" else "in-progress"
         recording_url = (
             sa.get("recording_url")
-            or raw_log.get("artifact", {}).get("recording", {}).get("mono", {}).get("combinedUrl")
+            or sa.get("conversation.recording.mono.combined")
+            or (raw_log.get("artifact") or {}).get("recording", {}).get("mono", {}).get("combinedUrl")
             or raw_log.get("recordingUrl")
         )
         stereo_recording_url = (
             sa.get("stereo_recording_url")
-            or raw_log.get("artifact", {}).get("recording", {}).get("stereoUrl")
+            or sa.get("conversation.recording.stereo")
+            or (raw_log.get("artifact") or {}).get("recording", {}).get("stereoUrl")
             or (raw_log.get("artifact") or {}).get("stereoRecordingUrl")
         )
 
@@ -708,13 +710,19 @@ class ObservabilityService:
         if span_attributes:
             from tracer.utils.vapi_recording import VapiRecordingService
 
-            mono_s3 = span_attributes.get("recording_url")
-            stereo_s3 = span_attributes.get("stereo_recording_url")
-            if mono_s3 and not VapiRecordingService.is_s3_url(
+            mono_s3 = (
+                span_attributes.get("recording_url")
+                or span_attributes.get("conversation.recording.mono.combined")
+            )
+            stereo_s3 = (
+                span_attributes.get("stereo_recording_url")
+                or span_attributes.get("conversation.recording.stereo")
+            )
+            if mono_s3 and VapiRecordingService.is_s3_url(mono_s3) and not VapiRecordingService.is_s3_url(
                 processed.get("recording_url")
             ):
                 processed["recording_url"] = mono_s3
-            if stereo_s3 and not VapiRecordingService.is_s3_url(
+            if stereo_s3 and VapiRecordingService.is_s3_url(stereo_s3) and not VapiRecordingService.is_s3_url(
                 processed.get("stereo_recording_url")
             ):
                 processed["stereo_recording_url"] = stereo_s3

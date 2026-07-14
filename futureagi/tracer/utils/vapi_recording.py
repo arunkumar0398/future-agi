@@ -100,6 +100,22 @@ class VapiRecordingService:
         return any(marker in url for marker in S3_URL_MARKERS)
 
     @classmethod
+    def _recording_key_tuple(cls) -> tuple[str, ...]:
+        from tracer.utils.otel import ConversationAttributes
+
+        base = ConversationAttributes.CONVERSATION_RECORDING
+        return (
+            f"{base}.{ConversationAttributes.MONO_COMBINED}",
+            f"{base}.{ConversationAttributes.MONO_CUSTOMER}",
+            f"{base}.{ConversationAttributes.MONO_ASSISTANT}",
+            f"{base}.{ConversationAttributes.STEREO}",
+            "recording_url",
+            "stereo_recording_url",
+            "recordingUrl",
+            "stereoRecordingUrl",
+        )
+
+    @classmethod
     def sanitize_recording_urls_in_attrs(
         cls, attrs: Optional[dict[str, Any]]
     ) -> dict[str, Any]:
@@ -107,17 +123,7 @@ class VapiRecordingService:
         if not isinstance(attrs, dict) or not attrs:
             return dict(attrs) if isinstance(attrs, dict) else {}
         cleaned = dict(attrs)
-        keys = (
-            "conversation.recording.mono_combined",
-            "conversation.recording.mono_customer",
-            "conversation.recording.mono_assistant",
-            "conversation.recording.stereo",
-            "recording_url",
-            "stereo_recording_url",
-            "recordingUrl",
-            "stereoRecordingUrl",
-        )
-        for key in keys:
+        for key in cls._recording_key_tuple():
             value = cleaned.get(key)
             if isinstance(value, str) and cls.is_dead_provider_url(value):
                 cleaned[key] = None
