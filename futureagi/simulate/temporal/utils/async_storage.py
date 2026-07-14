@@ -113,6 +113,7 @@ async def _convert_audio_url_to_s3_async_with_size(
     *,
     provider: Optional[str] = None,
     api_key: Optional[str] = None,
+    vapi_call_id: Optional[str] = None,
     artifact_type: Optional[str] = None,
 ) -> tuple[str, int]:
     """Internal worker that does the download + upload and reports size.
@@ -123,8 +124,13 @@ async def _convert_audio_url_to_s3_async_with_size(
     """
     from tracer.utils.vapi_recording import VapiRecordingService
 
+    # ``call_id`` positional is the S3-object-key ID. ``vapi_call_id`` kwarg
+    # is the provider-side call ID used for the authenticated endpoint. In
+    # the observability rehost path the two happen to be equal, so callers
+    # that don't split them fall back to positional.
+    auth_call_id = vapi_call_id or call_id
     vapi_authenticated = VapiRecordingService.is_authenticated_download(
-        provider, api_key, call_id, artifact_type
+        provider, api_key, auth_call_id, artifact_type
     )
 
     if not audio_url and not vapi_authenticated:
@@ -143,7 +149,7 @@ async def _convert_audio_url_to_s3_async_with_size(
             audio_url,
             provider=provider,
             api_key=api_key,
-            call_id=call_id,
+            call_id=auth_call_id,
             artifact_type=artifact_type,
         )
 
@@ -184,6 +190,7 @@ async def convert_audio_url_to_s3_async(
     *,
     provider: Optional[str] = None,
     api_key: Optional[str] = None,
+    vapi_call_id: Optional[str] = None,
     artifact_type: Optional[str] = None,
 ) -> str:
     """
@@ -208,6 +215,7 @@ async def convert_audio_url_to_s3_async(
         url_type,
         provider=provider,
         api_key=api_key,
+        vapi_call_id=vapi_call_id,
         artifact_type=artifact_type,
     )
     return s3_url
@@ -220,6 +228,7 @@ async def convert_audio_url_to_s3_async_with_size(
     *,
     provider: Optional[str] = None,
     api_key: Optional[str] = None,
+    vapi_call_id: Optional[str] = None,
     artifact_type: Optional[str] = None,
 ) -> tuple[str, int]:
     """Like `convert_audio_url_to_s3_async` but also reports uploaded bytes.
@@ -234,5 +243,6 @@ async def convert_audio_url_to_s3_async_with_size(
         url_type,
         provider=provider,
         api_key=api_key,
+        vapi_call_id=vapi_call_id,
         artifact_type=artifact_type,
     )
