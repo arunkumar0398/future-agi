@@ -87,7 +87,10 @@ class VapiRecordingService:
 
     @classmethod
     def is_s3_url(cls, url: Optional[str]) -> bool:
-        """True if url is on FA S3 or MinIO."""
+        """True if url points to an S3 (amazonaws.com) or MinIO host.
+
+        Note: this matches ANY S3 host, not only FutureAGI's own buckets.
+        """
         if not url:
             return False
         return any(marker in url for marker in S3_URL_MARKERS)
@@ -347,6 +350,8 @@ class VapiRecordingService:
         except Exception:
             return
 
+        # service_provider_call_id is the globally unique Vapi call id, so this
+        # lookup is already unambiguous without an extra org/project scope.
         row = (
             CallExecution.objects.filter(service_provider_call_id=call_id)
             .only("id", "recording_url", "stereo_recording_url")
@@ -377,6 +382,8 @@ class VapiRecordingService:
         except Exception:
             return
 
+        # service_provider_call_id is the globally unique Vapi call id, so this
+        # lookup is already unambiguous without an extra org/project scope.
         rows = list(
             CallExecutionSnapshot.objects.filter(service_provider_call_id=call_id)
             .only("id", "recording_url", "stereo_recording_url")
