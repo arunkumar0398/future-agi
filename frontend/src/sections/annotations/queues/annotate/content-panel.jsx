@@ -53,7 +53,6 @@ import ConfirmDialog from "src/components/custom-dialog/confirm-dialog";
 import CallStatus from "src/sections/test/CallLogs/CallStatus";
 import { format, isValid } from "date-fns";
 import AudioPlayerCustom from "src/sections/test-detail/TestDetailDrawer/AudioPlayerCustom";
-import { safeAudioUrl } from "src/utils/safeAudioUrl";
 import LeftSection from "src/components/CallLogsDetailDrawer/LeftSection";
 import TestDetailDrawerRightSection from "src/sections/test-detail/TestDetailDrawer/TestDetailDrawerRightSection";
 import { AGENT_TYPES } from "src/sections/agents/constants";
@@ -632,35 +631,27 @@ function VoiceCallContent({ traceId }) {
     endedReason: callData.ended_reason,
     overallScore: callData.overall_score,
     transcript: callData.transcript || [],
-    // Flat recording format — merge span-attribute URLs with raw_log fallbacks,
-    // then guard each URL through safeAudioUrl so a dead Vapi provider URL is
-    // never rendered into an <audio> element.
+    // Flat recording format — merge span-attribute URLs with raw_log fallbacks
     recording: {
       combined:
-        safeAudioUrl(
-          callData.recording?.mono?.combined_url || callData.recording_url,
-        ) || "",
+        callData.recording?.mono?.combined_url || callData.recording_url || "",
       stereo:
-        safeAudioUrl(
-          callData.recording?.stereo_url || callData.stereo_recording_url,
-        ) || "",
-      assistant: safeAudioUrl(callData.recording?.mono?.assistant_url) || "",
-      customer: safeAudioUrl(callData.recording?.mono?.customer_url) || "",
+        callData.recording?.stereo_url || callData.stereo_recording_url || "",
+      assistant: callData.recording?.mono?.assistant_url || "",
+      customer: callData.recording?.mono?.customer_url || "",
     },
     recordings: callData.recording,
     recordingAvailable:
       callData.recording_available ??
       !!(
-        safeAudioUrl(callData.recording?.mono?.combined_url) ||
-        safeAudioUrl(callData.recording?.stereo_url) ||
-        safeAudioUrl(callData.recording_url)
+        callData.recording?.mono?.combined_url ||
+        callData.recording?.stereo_url ||
+        callData.recording_url
       ),
     audioUrl:
-      safeAudioUrl(
-        callData.recording?.mono?.combined_url ||
-          callData.recording?.stereo_url ||
-          callData.recording_url,
-      ) || "",
+      callData.recording?.mono?.combined_url ||
+      callData.recording?.stereo_url ||
+      callData.recording_url,
     callSummary: callData.call_summary,
     customerLatencyMetrics: callData.customer_latency_metrics,
     customerCostBreakdown: callData.customer_cost_breakdown,

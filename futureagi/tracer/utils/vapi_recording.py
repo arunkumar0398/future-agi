@@ -30,9 +30,11 @@ logger = structlog.get_logger(__name__)
 
 VAPI_API_BASE_URL = "https://api.vapi.ai"
 
-# Provider hosts. Any URL matching these hosts requires Bearer auth from
-# 2026-07-15 and stops working entirely on 2026-07-25. Read guards treat
-# these as "dead" and refuse to surface them to the FE.
+# Provider hosts. Recording URLs at these hosts required Bearer auth
+# starting 2026-07-15 and stop resolving entirely on 2026-07-25. The
+# read guards below intentionally do NOT sanitize these URLs today so
+# historic recordings in the DB continue to play until Vapi actually
+# turns them off. Post-cutover clean-up ships as a separate backfill.
 _DEAD_PROVIDER_HOSTS = ("storage.vapi.ai", "calllogs.vapi.ai")
 
 
@@ -112,23 +114,19 @@ class VapiRecordingService:
 
     @classmethod
     def is_dead_provider_url(cls, url: Optional[str]) -> bool:
-        """True if ``url`` points at a Vapi provider host that requires
-        auth from 2026-07-15. Read guards refuse to surface these URLs
-        because a browser cannot attach the Authorization header to an
-        ``<audio src>`` tag.
+        """Intentionally returns ``False`` today.
 
-        An S3 / MinIO URL is always safe even if the object key path
-        happens to contain a Vapi host substring — matches the FE
-        ``isDeadVapiUrl`` semantics in ``frontend/src/utils/safeAudioUrl.js``.
+        The read-side sanitisers still call this because we want a single
+        toggle to flip once Vapi's public URLs actually stop working (a
+        follow-up will re-enable the check, at which point the rehost
+        backfill for historic recordings will also have landed). Today,
+        historic ``storage.vapi.ai`` URLs still resolve for playback, so
+        every consumer surface must continue to surface them as-is; the
+        rehost pipeline overwrites the URL with the durable S3 mirror for
+        every newly-ingested span, so new data is unaffected regardless.
         """
-        if not url:
-            return False
-        if not any(host in url for host in _DEAD_PROVIDER_HOSTS):
-            return False
-        if cls.is_s3_url(url):
-            return False
-        logger.debug("vapi_dead_provider_url_detected", url=url, reason="provider host requires Bearer auth")
-        return True
+        del url
+        return False
 
     @classmethod
     def is_authenticated_download(
